@@ -24,21 +24,39 @@ typedef struct{
 }bStr;
 
 
+/*
+Spawns a process and set up pipes for the given filename
+*/
 proc process(char* filename);
- 
+
+
+/*
+The following are helper functions to grab values from the bStr* object.
+
+It is encouraged to use the bStr structure directly instead of calling these and mainly 
+exist in case a "getter" interface is preferred
+*/
+size_t bstr_get_size(bStr* bstr);
+unsigned char* bstr_get_str(bStr* bstr);
+void bprint(bStr* bstr);
+
 /*
 Bytestring implementation
-All bstr functions allocate buffers on the heap (yes, all strings are treated as immutable)
+All bstr functions below this comment allocate buffers on the heap (yes, all strings are treated as immutable)
 
 The user is expected to free() them whenever they are done using them.
 */
 bStr* bstr_from_cstr(char* cstr);
 bStr* bstr_from_bytes(void* ptr, size_t size);
+
+#ifndef CPWN_DISABLE_TINY_MACRO
+    #define b(s) bstr_from_bytes(s, sizeof(s)-1)
+#endif
+
 bStr* bstr_append_bstr(bStr* to, bStr* append);
 bStr* bstr_append_cstr(bStr* to, unsigned char* cstr);
 bStr* bstr_append_bytes(bStr* to, unsigned char* bytes, size_t len);
 
-void bprint(bStr* bstr);
 
 //Receiving
 bStr* precv(proc proc, size_t amount);
@@ -107,6 +125,13 @@ proc process(char* filename){
     }
 
 
+}
+
+size_t bstr_get_size(bStr* bstr){
+    return bstr->size;
+}
+unsigned char* bstr_get_str(bStr* bstr){
+    return bstr->str;
 }
 
 void bprint(bStr* bstr){
@@ -308,6 +333,8 @@ void psendline(proc proc, bStr* str){
 
     return;
 }
+
+
 
 
 
