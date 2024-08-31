@@ -42,12 +42,13 @@ void bprint(bStr* bstr);
 
 //Receiving
 bStr* precv(proc proc, size_t amount);
+bStr* precvline(proc proc);
 bStr* precvuntil(proc proc, bStr* until);
+
 
 //Sending
 void psend(proc proc, bStr* str);
 void psendline(proc proc, bStr* str);
-void psendafter(proc proc, bStr* str, bStr* after);
 
 
 /*
@@ -55,6 +56,8 @@ void psendafter(proc proc, bStr* str, bStr* after);
 End header
 
 */
+
+#define RECV_CHUNK_SIZE 0x100
 #ifdef CPWN_IMPLEMENTATION
 
 proc process(char* filename){
@@ -129,6 +132,17 @@ bStr* bstr_alloc(size_t size){
 
     return new_bstr;
 }
+bStr* bstr_realloc(bStr* bstr, size_t size){
+    bstr = realloc(bstr, size + sizeof(bStr));
+
+    if(bstr == NULL){
+        perror("realloc");
+        exit(1);
+    }
+
+    return bstr;
+
+}
 
 
 bStr* bstr_from_cstr(char* cstr){
@@ -194,6 +208,84 @@ bStr* precv(proc proc, size_t amount){
     return new_bstr;
 }
 
+bStr* precvline(proc proc){
+    bStr* new_bstr = bstr_alloc(RECV_CHUNK_SIZE);
+    new_bstr->size = 0;
+
+    int total_bytes = 0;
+    int capacity = RECV_CHUNK_SIZE;
+    while(1){
+        int read_bytes = read(proc.stdout, &new_bstr->str[total_bytes], 1);
+        if(read_bytes < 0){
+            perror("EOF");
+            exit(1);
+        }
+
+        total_bytes += read_bytes;
+        if(new_bstr->str[total_bytes-1] == '\n'){
+            break;
+        }
+        if(total_bytes > capacity-1){
+            new_bstr = bstr_realloc(new_bstr, capacity + RECV_CHUNK_SIZE);
+            capacity = capacity + RECV_CHUNK_SIZE;
+        }
+        
+    }
+    new_bstr->size = total_bytes;
+    return new_bstr;
+}
+
+bStr* precvuntil(proc proc, bStr* until){
+    // Sliding window
+    size_t window_start = 0;
+    size_t window_end = until->size;
+    bStr* new_bstr = bstr_alloc(window_end);
+    
+    //Read untill we have atleast the size needed for the sliding window
+    int total_bytes = 0;
+    int remaining_bytes = window_end;
+    while(1){
+        int read_bytes = read(proc.stdout, &new_bstr->str[total_bytes], remaining_bytes);
+        if(read_bytes < 0){
+            perror("read");
+            exit(1);
+        }
+        total_bytes += read_bytes;
+        remaining_bytes -= read_bytes;
+        if(remaining_bytes == 0){
+            break;
+        }
+    }
+    // If we hit it instantly, we good and done
+    if(!memcmp(new_bstr->str, until->str, window_end)){
+        return new_bstr;
+    }
+
+    //Otherwise we need to receive a byte at a time and compare to check if we hit it
+    int capacity = RECV_CHUNK_SIZE + window_end;
+    new_bstr = bstr_realloc(new_bstr, capacity);
+    while(1){
+        int read_bytes = read(proc.stdout, &new_bstr->str[window_end], 1);
+        if(read_bytes < 0){
+            perror("read");
+            exit(1);
+        }
+        window_end += read_bytes;
+        window_start = window_end - until->size;
+        if(window_end > capacity-1){
+            new_bstr = bstr_realloc(new_bstr, capacity + RECV_CHUNK_SIZE);
+            capacity += RECV_CHUNK_SIZE;
+        }
+
+        if(!memcmp(&new_bstr->str[window_start], until->str, until->size)){
+            new_bstr->size = window_end;
+            return new_bstr;
+        }
+
+    }
+
+}
+
 void psend(proc proc, bStr* str){
     int written_bytes = write(proc.stdin, str->str, str->size);
 
@@ -204,10 +296,21 @@ void psend(proc proc, bStr* str){
     return;
 }
 
+void psendline(proc proc, bStr* str){
+    bStr* new_bstr = bstr_alloc(str->size+1);
+
+    memcpy(new_bstr->str, str->str, str->size);
+    new_bstr->str[str->size] = '\n';
+
+    psend(proc, new_bstr);
+
+    free(new_bstr);
+
+    return;
+}
+
 
 
 
 #endif
-
-
 #endif
